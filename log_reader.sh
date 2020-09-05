@@ -80,6 +80,11 @@ if ! [[ -w $IP_LOG ]]; then
 	touch $IP_LOG
 fi
 while true; do
-read_file
-abuseipdb
+	first_size=$(du -b /var/log/nginx/access.log | cut -f 1)
+	sleep 3
+	second_size=$(du -b /var/log/nginx/access.log | cut -f 1)
+	if [[ $first_size != $second_size ]]; then
+		read_file
+		abuseipdb
+	fi
 done
