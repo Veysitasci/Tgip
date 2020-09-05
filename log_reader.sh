@@ -37,9 +37,11 @@ function abuseipdb() {
 			if [ $score -gt 1 ]; then
 				block_ip $ip
 				sendTG "Successfully Blocked! %0AIP: $ip %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport %0ATotal Reports: $totalreport"
+				sleep 2
 				sendTGPQHAZ "Successfully Blocked! %0AIP: $ip %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport %0ATotal Reports: $totalreport"
 			else
 				sendTG "IP: $ip %0ATime: $time %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport   "
+				sleep 2
 				sendTGPQHAZ "IP: $ip %0ATime: $time %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport   "
 			fi
 		fi
@@ -60,9 +62,11 @@ function abuseipdb() {
 			if [ $score -gt 1 ]; then
 				block_ip $ip
 				sendTG "Successfully Blocked! %0AIP: $ip %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport"
+				sleep 2
 				sendTGPQHAZ "Successfully Blocked! %0AIP: $ip %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport %0ATotal Reports: $totalreport"
 			else
 				sendTG "IP: $ip %0ATime: $time %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport   "
+				sleep 2
 				sendTGPQHAZ "IP: $ip %0ATime: $time %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport   "
 			fi
 		fi
