@@ -26,34 +26,38 @@ function alienvault(){
     malicious_host=$( echo "$alien_output" | jq '.reputation.counts."Malicious Host"' | sed 's/1/MALICIOUS HOST/g')
 }
 
+function reportAbuseipdb(){
+    message=$(grep "${*}" $NGINX_LOG | awk '{print $0}' | sed 's/"https:\/\/coaching.yudecide.de\/dashboard"/ /g')
+    report_ip=$(curl https://api.abuseipdb.com/api/v2/report  --data-urlencode "ip=${*}"  -d categories=19,20,21 --data-urlencode "comment=${message}" -H "Key: $YOUR_API_KEY" -H "Accept: application/json")
+    report_score=$(echo "$report_ip" | jq '.data.abuseConfidenceScore')
+}
+
 function abuseipdb() {
     for ((i=0;i<${#ip[@]};i++));do
         ip_check=$(grep "${ip[i]}" $IP_LOG | tail -n 1)
-        if [ -n $ip_check ]; then
+        if [ -z $ip_check ]; then
             ip_check=${ip[i]}
-        else
-            if  [[ "${ip[i]}" =~ $ip_check ]]; then
-                alienvault "${ip[i]}"
-                output=$(curl -G https://api.abuseipdb.com/api/v2/check --data-urlencode "ipAddress=${ip[i]}" -d maxAgeInDays=90 -d verbose -H "Key: $YOUR_API_KEY" -H "Accept: application/json")
-                whitelist=$( echo "$output" | jq '.data.isWhitleisted')
-                score=$( echo "$output" | jq '.data.abuseConfidenceScore')
-                isp=$( echo "$output" | jq '.data.isp'| tr "&" " ")
-                countryname=$( echo "$output" | jq '.data.countryName')
-                totalreport=$( echo "$output" | jq '.data.totalReports')
-                lastreport=$( echo "$output" | jq '.data.lastReportedAt')
-                echo "${ip[i]}" >> $IP_LOG
-                if [ "$score" -gt 1 ] || [ "$alien_score" -gt 0 ] ; then
-                    block_ip ${ip[i]}
-					sleep 2 #Tg needs 0.5sec gap between 2 messages
-                    sendTG "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
-                    sleep 2
-                    sendTGPQHAZ "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0a %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
-                else
-					sleep 2
-                    sendTG "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
-                    sleep 2
-                    sendTGPQHAZ "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
-                fi
+            alienvault "${ip[i]}"
+            output=$(curl -G https://api.abuseipdb.com/api/v2/check --data-urlencode "ipAddress=${ip[i]}" -d maxAgeInDays=90 -d verbose -H "Key: $YOUR_API_KEY" -H "Accept: application/json")
+            whitelist=$( echo "$output" | jq '.data.isWhitleisted')
+            score=$( echo "$output" | jq '.data.abuseConfidenceScore')
+            isp=$( echo "$output" | jq '.data.isp'| sed 's/&/ /g') #http api cant handle &
+            countryname=$( echo "$output" | jq '.data.countryName')
+            totalreport=$( echo "$output" | jq '.data.totalReports')
+            lastreport=$( echo "$output" | jq '.data.lastReportedAt')
+            echo "${ip[i]}" >> $IP_LOG
+            if [ "$score" -gt 1 ] || [ "$alien_score" -gt 0 ] ; then
+                block_ip ${ip[i]}
+                reportAbuseipdb ${ip[i]}
+                sleep 2 #Tg needs 0.5sec gap between 2 messages
+                sendTG "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $report_score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
+                sleep 2
+                sendTGPQHAZ "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $report_score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0a %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
+            else
+                sleep 2
+                sendTG "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
+                sleep 2
+                sendTGPQHAZ "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
             fi
         fi
     done
@@ -70,9 +74,9 @@ if ! [[ -w $IP_LOG ]]; then
 fi
 while true; do
     first_size=$(du -b /var/log/nginx/access.log | cut -f 1)
-    sleep 0.5
+    sleep 3
     second_size=$(du -b /var/log/nginx/access.log | cut -f 1)
-    if [[ $first_size != "$second_size" ]]; then
+    if [[ $first_size != $second_size ]]; then
         read_file
         abuseipdb
     fi
