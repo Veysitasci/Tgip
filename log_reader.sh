@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 
 TELEGRAM_TOKEN=""
 NGINX_LOG="/var/log/nginx/access.log"
@@ -13,9 +13,8 @@ function sendTG() {
 
 
 function read_file() {
-    mapfile -t nginx_log < <(tail -n 20 $NGINX_LOG)
-    mapfile -t ip < <(echo $nginx_log | awk '{print $1}'); #change here amount of ip's
-    mapfile -t time< <(echo $nginx_log | awk '{print $4 $5}') #same number as ip's
+    mapfile -t ip < <(tail -n 30 $NGINX_LOG | awk '{print $1}'); #change here amount of ip's
+    mapfile -t time< <( tail -n 30 $NGINX_LOG| awk '{print $4 $5}') #same number as ip's
 }
 
 function sendTGPQHAZ(){
@@ -29,37 +28,40 @@ function alienvault(){
 }
 
 function reportAbuseipdb(){
-    message=$(grep "${*}" $nginx_log | awk '{print $0}' | (sed 's/"https:\/\/${URL}"//g'|| sed's/"http:\/\/${URL}"//g'))
+    message=$(grep "${*}" $NGINX_LOG | awk '{print $0}' | (sed 's/"https:\/\/${URL}"//g'|| sed's/"http:\/\/${URL}"//g'))
     report_ip=$(curl https://api.abuseipdb.com/api/v2/report  --data-urlencode "ip=${*}"  -d categories=19,20,21 --data-urlencode "comment=${message}" -H "Key: $YOUR_API_KEY" -H "Accept: application/json")
-    report_score=$(echo "$report_ip" | jq '.data.abuseConfidenceScore')
+    report_score=$(echo "$report_ip" | jq '.data.abuseConfidenceScore' | sed 's/null/0/g')
 }
 
 function abuseipdb() {
-    for ((i=0;i<${#ip[@]};i++));do
+    for ((i=0;i<=${#ip[@]};i++));do
         ip_check=$(grep "${ip[i]}" $IP_LOG | tail -n 1)
         if [ -z $ip_check ]; then
             ip_check=${ip[i]}
             alienvault "${ip[i]}"
             output=$(curl -G https://api.abuseipdb.com/api/v2/check --data-urlencode "ipAddress=${ip[i]}" -d maxAgeInDays=90 -d verbose -H "Key: $YOUR_API_KEY" -H "Accept: application/json")
             whitelist=$( echo "$output" | jq '.data.isWhitleisted' | sed 's/null/0/g')
-            score=$( echo "$output" | jq '.data.abuseConfidenceScore')
-            isp=$( echo "$output" | jq '.data.isp'| (sed 's/null//g' || sed 's/&/ /g')) #http api cant handle &
+            score=$( echo "$output" | jq '.data.abuseConfidenceScore' | sed 's/null/0/g')
+            isp=$( echo "$output" | jq '.data.isp'| (sed 's/&/ /g' || sed 's/null/ /g')) #http api cant handle &
             countryname=$( echo "$output" | jq '.data.countryName' | sed 's/null/ /g')
             totalreport=$( echo "$output" | jq '.data.totalReports' | sed 's/null/0/g')
             lastreport=$( echo "$output" | jq '.data.lastReportedAt'| sed 's/null/0/g')
+	    nginx_message=$(cat $NGINX_LOG | grep ${ip[i]} | awk '{print $0}' | tail -n 3)
+            block_message="Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $report_score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $nginx_message "
+            message="IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $nginx_message"
             echo "${ip[i]}" >> $IP_LOG
             if [ "$score" -gt 1 ] || [ "$alien_score" -gt 0 ] || [ "$totalreport" -gt 0 ] ; then
                 block_ip ${ip[i]}
                 reportAbuseipdb ${ip[i]}
                 sleep 2 #Tg needs 0.5sec gap between 2 messages
-                sendTG "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $report_score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
+		sendTG "$block_message"
                 sleep 2
-                sendTGPQHAZ "Successfully Blocked! %0AIP: ${ip[i]} %0ATime: ${time[i]} %0ACountry: $countryname %0AAbusescore: $report_score %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0a %0AThreat Score: $alien_score %0AMalicious: $malicious_host "
+                sendTGPQHAZ "$block_message"
             else
                 sleep 2
-                sendTG "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $(echo $nginx_log | grep ${ip[i]} | awk '{print $0}')"
+		sendTG "$message"
                 sleep 2
-                sendTGPQHAZ "IP: ${ip[i]} %0ATime: ${time[i]} %0AWhitelist: $whitelist %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $(echo $nginx_log |  grep ${ip[i]} | awk '{print $0}')"
+                sendTGPQHAZ "$message"
             fi
         fi
     done
@@ -73,6 +75,8 @@ function abuseipdb() {
 
 if ! [[ -w $IP_LOG ]]; then
     touch $IP_LOG
+    echo "127.0.0.1" >> $IP_LOG
+    echo "::1" >> $IP_LOG
 fi
 while true; do
     first_size=$(du -b $NGINX_LOG | cut -f 1)
