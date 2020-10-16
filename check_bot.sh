@@ -2,7 +2,7 @@
 
 TELEGRAM_TOKEN=""
 NGINX_LOG="/var/log/nginx/access.log"
-ABUSEIPDB_API_KEY="" # ABUSEIPBDP-KEY
+ABUSEIPDB_API_KEY="" #ABUSEIPBDP-KEY
 IP_LOG="/root/ips.txt"
 ALIENVAULT_API_KEY="" #Alienvault-KEY
 URL=""
@@ -14,9 +14,12 @@ KERNEL_LOG="/var/log/kern.log"
 SERVER_IP=""
 SERVER_MAC=""
 HOST_NAME=""
+OWN_IP="" # enter here your own IP
+LOG_DMESG="/root/log_dmesg"
+IP_RAW="/root/ips.raw"
+IPS_FILTERED="/root/ips.filtered"
+
 second_size_nginx=0
-OWN_IP=""
-LOG_DMESG=""
 
 function send_tg() {
     curl -s "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendmessage" --data "text=${*}&chat_id=${CHAT_ID}&disable_web_page_preview=true&parse_mode=Markdown" > /dev/null
@@ -25,12 +28,16 @@ function send_tg() {
 
 function read_file_dmesg() {
     dmesg -TS >> $LOG_DMESG
-    mapfile -t port_scan_ip< <(cat $LOG_DMESG |  grep -v $OWN_IP)
-
+    mapfile -t port_scan_ip< <(cat $IPS_FILTERED)
 }
 
 function read_file_nginx(){
-    mapfile -t ip < <(tail -n 100 $NGINX_LOG | cut -d " "  -f1 | grep -v $OWN_IP) #change here amount of ip's, cut is faster than awk
+    mapfile -t ip < <(tail -n 100 $NGINX_LOG | cut -d " "  -f1 | grep -v $OWN_IP) #change here amount of ip's, cut is faster than awk. grep -v remove your own ip
+}
+
+function sort_ips(){
+    cat $LOG_DMESG | egrep -o "SRC=+[0-9]*.[0-9]*.[0-9]*.[0-9]*" | sed 's/SRC=//' > $IP_RAW
+    awk 'FNR==NR{a[$0]=1;next}!($0 in a)' $IP_LOG $IP_RAW | sort| uniq > $IPS_FILTERED # https://stackoverflow.com/questions/4717250/extracting-unique-values-between-2-sets-files
 }
 
 function send_tg_2(){
@@ -62,36 +69,36 @@ function send_abuseipbdb_request(){
         log_message=$(cat $NGINX_LOG | grep "$1" | awk '{print $0}' | tail -n 3 | sed "s/https:\/\/${URL}//g"| sed "s/http:\/\/${URL}//g" | sed 's/\r//g' )
         nginx_time=$(echo $log_message | cut -d " " -f4)
         if [ "$score" -gt 1 ] || [ "$alien_score" -gt 0 ] || [ "$totalreport" -gt 0 ] ; then
-            block_message="Successfully Blocked! %0AIP: $1 %0ATime: $nginx_time %0ACountry: $countryname %0AAbusescore: $report_score %0AISP: $isp %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $log_message "
+            block_message="%0ASuccessfully Blocked! %0AIP: $1 %0ATime: $nginx_time %0ACountry: $countryname %0AAbusescore: $report_score %0AISP: $isp %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $log_message "
             block_ip "$1"
             reportabuseipdb "$1" "$2" "$log_message"
-            sleep 1.5 #Tg needs 0.5sec gap between 2 messages
+            sleep 1 #Tg needs 0.5sec gap between 2 messages
             send_tg "$block_message"
-            sleep 1.5
+            sleep 1
             send_tg_2 "$block_message"
         else
             message="%0AIP: $1 %0ATime: $nginx_time %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $log_message"
-            sleep 1.5
+            sleep 1
             send_tg "$message"
-            sleep 1.5
+            sleep 1
             send_tg_2 "$message"
         fi
     else
         scanned_ports=$5
-        log_message=$(echo $6 | sed "s/$SERVER_IP/MYSERVERIP/g" | sed "s/$SERVER_MAC/SERVERMAC/g" | sed "s/$HOST_NAME//g")
+        log_message=$(grep "$1" $LOG_DMESG | tail -1 | sed "s/$SERVER_IP/MYSERVERIP/g" | sed "s/$SERVER_MAC/SERVERMAC/g" | sed "s/$HOST_NAME//g")
         port_scan_time=$4
         report_message=$(echo "$log_message Ports: $scanned_ports")
         if [ "$score" -gt 1 ] || [ "$alien_score" -gt 0 ] || [ "$totalreport" -gt 0 ] ; then
             block_message="PORTSCAN: %0ASuccessfully Blocked! %0AIP: $1 %0APorts: $scanned_ports %0ATime: $port_scan_time %0ACountry: $countryname %0AAbusescore: $report_score %0AISP: $isp %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $log_message "
             block_ip "$1"
             reportabuseipdb "$1" "$2" "$report_message"
-            sleep 1.5 #Tg needs 0.5sec gap between 2 messages
+            sleep 1 #Tg needs 0.5sec gap between 2 messages
             send_tg "$block_message"
-            sleep 1.5
+            sleep 1
             send_tg_2 "$block_message"
         else
             message="PORTSCAN: %0AIP: $1 %0APorts: $scanned_ports %0ATime: $port_scan_time %0AAbusescore: $score %0AISP: $isp %0ACountry: $countryname %0ATotal Reports: $totalreport %0ALast Report: $lastreport%0A %0A#############%0AAlienvault Results:%0A %0AThreat Score: $alien_score %0AMalicious: $malicious_host %0A%0AMessage: $log_message"
-            sleep 0.5
+            sleep 1
             send_tg "$message"
             sleep 1
             send_tg_2 "$message"
@@ -106,7 +113,7 @@ function check_nginx_log() {
             break
         fi
         current_ip=${ip[i]}
-        nginx_ip=$(grep $current_ip $IP_LOG | tail -n 1)
+        nginx_ip=$(grep "$current_ip" $IP_LOG | tail -n 1)
         if [ -z $nginx_ip ]; then
             send_abuseipbdb_request "$current_ip" "$REPORT_WEB_ATTACK" "nginx"
         fi
@@ -115,25 +122,20 @@ function check_nginx_log() {
 
 function check_port_scan(){
     for ((x=0;x<=${#port_scan_ip[@]};x++));do
-        current_ip=$(echo ${port_scan_ip[x]} | egrep -o "SRC=+[0-9]*.[0-9]*.[0-9]*.[0-9]*" | sed 's/SRC=//' )
+        current_ip="${port_scan_ip[x]}"
         if [[ -z $current_ip ]]; then
             break
         fi
-        ip_check=$(grep $current_ip $IP_LOG | tail -n 1)
-        if [ -z $ip_check ]; then
-            current_time=$(echo ${port_scan_ip[x]} | egrep -o  "[A-Z]+[a-z]*[[:space:]]+[A-Z]..[[:space:]][0-9].[[:space:]][0-9]*:[0-9]*:[0-9]*[[:space:]][0-9]*" ) # TODO: REFACTOR
-            current_port=$(echo ${port_scan_ip[x]} | egrep -o "DPT=+[0-9]*" | sed 's/DPT=//')
-            if [[ -z $current_port ]]; then
-                current_port=$(echo ${port_scan_ip[x]} | egrep -o "PROTO=[A-Z]*" | sed 's/PROTO=//')
-            fi
-            if [[ -n $current_ip ]] && [[ -n $current_time ]]; then
-                send_abuseipbdb_request "$current_ip" "$REPORT_PORT_SCAN" "psad" "$current_time" "$current_port" "${port_scan_ip[x]}"
-            fi
+        current_time=$(cat $LOG_DMESG | grep "${port_scan_ip[x]}" | tail -1 | egrep -o  "[A-Z]+[a-z]*[[:space:]]+[A-Z]..[[:space:]][0-9].[[:space:]][0-9]*:[0-9]*:[0-9]*[[:space:]][0-9]*" ) # TODO: REFACTOR
+        current_port=$(cat $LOG_DMESG | grep "${port_scan_ip[x]}" | tail -1 | egrep -o "DPT=+[0-9]*" | sed 's/DPT=//')
+        if [[ -z $current_port ]]; then
+            current_port=$(cat $LOG_DMESG | grep "${port_scan_ip[x]}" | tail -1 | egrep -o "PROTO=[A-Z]*" | sed 's/PROTO=//')
+        fi
+        if [[ -n $current_ip ]] && [[ -n $current_time ]]; then
+            send_abuseipbdb_request "$current_ip" "$REPORT_PORT_SCAN" "psad" "$current_time" "$current_port"
         fi
     done
-    if [ $x -gt 3000 ]; then
-        rm -f $LOG_DMESG
-    fi
+    rm $LOG_DMESG
 }
 
 function set_vars_nginx(){
@@ -158,19 +160,18 @@ function unset_vars_dmesg(){
 #
 ########################################################
 
-if ! [[ -w $IP_LOG ]]; then #TODO: Refactor with for-loop
+if ! [[ -w $IP_LOG ]]; then #TODO: Refactor with list and for-loop
     touch $IP_LOG
     echo "127.0.0.1" >> $IP_LOG
     echo "127.0.0.53" >> $IP_LOG
     echo "::1" >> $IP_LOG
-    echo "8.8.8.8" >> $IP_LOG #Google DNS
-    echo "1.1.1.1" >> $IP_LOG #Cloudflare DNS
-    echo "8.8.4.4" >> $IP_LOG #Google DNS
+    echo "8.8.8.8" >> $IP_LOG #Google as DNS Resolver
+    echo "1.1.1.1" >> $IP_LOG
+    echo "8.8.4.4" >> $IP_LOG #Google as DNS Resolver
     echo "213.133.98.98" >> $IP_LOG #Hetzner DNS
     echo "213.133.99.99" >> $IP_LOG
     echo "213.133.100.100" >> $IP_LOG
 fi
-
 while true; do
     dmesg -TS >> $LOG_DMESG
     first_size_nginx=$(du -b $NGINX_LOG | cut -f 1)
@@ -183,6 +184,7 @@ while true; do
         second_size_nginx=$(du -b $NGINX_LOG | cut -f 1)
     fi
     set_vars_dmesg
+    sort_ips
     read_file_dmesg
     check_port_scan
     unset_vars_dmesg
