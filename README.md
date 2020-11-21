@@ -1,6 +1,5 @@
 # Telegram-IP-Check-Bot
 This script will parse NGINX- and dmesg-logs and checks the ip addresses found there using the AbuseIPDB and Alienvault-API to see if it is a malicious ip and blocks it if necessary.
-thx to @slava !
 
 
 ## Quick start for Debian/Ubuntu based installations
@@ -28,3 +27,7 @@ It might be possible that this script blocks ip-addresses that are actually harm
 ## Screenshot
  
 <img src="https://github.com/Billaids/Telegram-IP-Check-Bot/blob/master/portscan_notification.jpg" width="400" />
+
+## Contributors
+@KEN 
+@uberhahn
